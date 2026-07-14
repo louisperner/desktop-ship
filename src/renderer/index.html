@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Desktop Ship — Cockpit</title>
+  <link rel="stylesheet" href="../../node_modules/@xterm/xterm/css/xterm.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Solid background fill (optional; replaces the transparent desktop) -->
+  <div class="bg-fill" id="bgFill"></div>
+
+  <!-- Drifting starfield in the windshield -->
+  <canvas id="stars"></canvas>
+
+  <!-- AI-generated cockpit frame (transparent window over the desktop) -->
+  <img class="cockpit-img" src="assets/cockpit.png" alt="" />
+
+  <!-- Snap grid overlay (shown while dragging when snap is on) -->
+  <div class="grid-overlay" id="gridOverlay"></div>
+
+  <!-- Canopy lift handle: click to raise/lower the whole cockpit -->
+  <div class="canopy-tab" id="canopyTab" title="Raise / lower cockpit">
+    <span class="canopy-chevron">⌃</span><span class="canopy-label">RAISE COCKPIT</span>
+  </div>
+
+  <!-- ============ HULL: A-frame canopy (Starfield style) ============ -->
+  <div class="canopy">
+    <div class="crossbar"></div>
+    <div class="pillar left">
+      <span class="pillar-face"></span>
+      <span class="pillar-edge"></span>
+      <span class="warn-stripe"></span>
+      <span class="pillar-label">PULL ESCAPE</span>
+    </div>
+    <div class="pillar right">
+      <span class="pillar-face"></span>
+      <span class="pillar-edge"></span>
+      <span class="warn-stripe"></span>
+      <span class="pillar-label">PULL ESCAPE</span>
+    </div>
+  </div>
+
+  <!-- ============ HUD (thin, glassy, projected) ============ -->
+  <div class="hud">
+    <!-- weapon/system arcs around the reticle -->
+    <div class="hud-top">20 <em>MCL</em></div>
+    <div class="hud-bal">BAL <b>100</b></div>
+    <div class="hud-las"><b>100</b> LAS</div>
+
+    <div class="reticle">
+      <div class="ticks"></div>
+      <div class="arc"></div>
+      <div class="arc-thin"></div>
+      <div class="chevron cl"></div>
+      <div class="chevron cr"></div>
+      <div class="target" id="target"></div>
+      <span class="arc-cap top"></span>
+      <span class="arc-cap left"></span>
+      <span class="arc-cap right"></span>
+    </div>
+
+    <!-- speed + boost lower-left -->
+    <div class="hud-speed">
+      <div class="speed-bar"><span id="speedFill"></span></div>
+      <div class="speed-label">SPEED <b id="speedVal">88</b></div>
+    </div>
+    <div class="hud-boost">BOOST <span class="boost-bar" id="boostBar"></span></div>
+
+    <!-- hull + ship status lower-right -->
+    <div class="hud-hull">
+      <svg class="ship" viewBox="0 0 64 80" aria-hidden="true">
+        <polygon points="32,2 40,26 38,52 50,70 32,62 14,70 26,52 24,26"
+          fill="none" stroke="currentColor" stroke-width="2"/>
+      </svg>
+      <div class="hull-readout">HULL <b id="hullVal">100</b></div>
+    </div>
+  </div>
+
+  <!-- ============ DASHBOARD: row of MFD screens ============ -->
+  <footer class="dash">
+    <!-- far-left: power bus + buttons -->
+    <section class="mfd small" id="mfd-power">
+      <div class="mfd-bezel"></div>
+      <div class="mfd-head drag">⋮ POWER</div>
+      <div class="bus">
+        <div class="bus-col"><i></i><i></i><i></i><label>BAL</label></div>
+        <div class="bus-col"><i></i><i></i><i></i><label>MSL</label></div>
+        <div class="bus-col on"><i></i><i></i><i></i><label>ENG</label></div>
+        <div class="bus-col"><i></i><i></i><i></i><label>SHD</label></div>
+        <div class="bus-col"><i></i><i></i><i></i><label>GRV</label></div>
+      </div>
+    </section>
+
+    <!-- left MFD: PWR / NAV gauges -->
+    <section class="mfd" id="mfd-nav">
+      <div class="mfd-bezel"></div>
+      <div class="mfd-head drag">PWR · NAV</div>
+      <div class="gauge" id="g-cpu"><label>CPU</label><div class="bar"><span></span></div><b>--</b></div>
+      <div class="gauge" id="g-mem"><label>MEM</label><div class="bar"><span></span></div><b>--</b></div>
+      <div class="gauge" id="g-net"><label>NET</label><div class="bar"><span></span></div><b>--</b></div>
+      <div class="dials">
+        <div class="dial"><div class="needle" id="d1"></div></div>
+        <div class="dial"><div class="needle" id="d2"></div></div>
+        <div class="dial"><div class="needle" id="d3"></div></div>
+      </div>
+    </section>
+
+    <!-- center MFD: targeting grid -->
+    <section class="mfd center" id="mfd-comp">
+      <div class="mfd-bezel"></div>
+      <div class="mfd-head drag">TGT · COMP</div>
+      <div class="tgt-grid"><span class="tgt-cross"></span></div>
+      <div class="mfd-foot"><span class="clock" id="clock">--:--:--</span><span id="coords">X --- Y --- Z ---</span></div>
+    </section>
+
+    <!-- right MFD: sensors / radar -->
+    <section class="mfd" id="mfd-sensors">
+      <div class="mfd-bezel"></div>
+      <div class="mfd-head drag">SENSORS</div>
+      <div class="radar">
+        <div class="radar-grid"></div><div class="sweep"></div>
+        <i class="blip" style="top:30%;left:60%"></i>
+        <i class="blip" style="top:65%;left:40%"></i>
+        <i class="blip" style="top:50%;left:75%"></i>
+      </div>
+      <div class="mfd-foot">
+        <button class="sw" id="toggle">SHIELD <em id="shieldState">UP</em></button>
+        <button class="sw off" id="pin">PIN <em id="pinState">OFF</em></button>
+      </div>
+    </section>
+
+    <!-- far-right: throttle + viewport + eject -->
+    <section class="mfd small" id="mfd-thrust">
+      <div class="mfd-bezel"></div>
+      <div class="mfd-head drag">THRUST</div>
+      <div class="throttle-track"><div class="throttle-fill" id="thrFill"></div></div>
+      <b class="thr-val" id="thrVal">68%</b>
+      <select id="display" title="Viewport / Monitor"></select>
+      <button id="termToggle" class="sw">▼ TERMINAL</button>
+      <button id="hubToggle" class="sw">▤ PANELS</button>
+      <button id="holoToggle" class="sw">⊞ WIDGETS</button>
+      <button id="settingsToggle" class="sw">⚙ SETTINGS</button>
+      <button id="quit" class="danger">⏻ EJECT</button>
+      <span class="mode" id="mode">MANUAL</span>
+    </section>
+  </footer>
+
+  <!-- ============ TERMINAL: real shell console ============ -->
+  <div class="console" id="console">
+    <div class="console-bar">
+      <span class="console-title">SHIP TERMINAL · <em id="termShell">shell</em></span>
+      <span class="console-tabs" id="termTabs"></span>
+      <button class="console-tab-add" id="termTabAdd" title="New tab">+</button>
+      <span class="console-dot" data-c="r"></span>
+      <span class="console-dot" data-c="y"></span>
+      <button class="console-min" id="termClose" title="Close">×</button>
+    </div>
+    <div class="console-screen" id="termScreen"></div>
+  </div>
+
+  <!-- ============ SETTINGS PANEL ============ -->
+  <div class="settings panel" id="settings" hidden>
+    <div class="settings-bar drag">
+      <span class="settings-title">⚙ SHIP SETTINGS</span>
+      <button class="console-min" id="settingsClose" title="Close">×</button>
+    </div>
+    <div class="settings-tabs" id="settingsTabs">
+      <button class="set-tab active" data-tab="bg">Background</button>
+      <button class="set-tab" data-tab="universe">Universe</button>
+      <button class="set-tab" data-tab="system">System</button>
+      <button class="set-tab" data-tab="panels">Panels</button>
+    </div>
+    <div class="settings-body">
+      <div class="set-group" data-tab="bg">
+        <div class="set-head">BACKGROUND IMAGE</div>
+        <label class="set-row">
+          <span>Show cockpit</span>
+          <button class="sw" id="cockpitShowToggle">ON</button>
+        </label>
+        <label class="set-row">
+          <span>Zoom <b id="bgZoomVal">100%</b></span>
+          <input type="range" id="bgZoom" min="50" max="250" value="100" />
+        </label>
+        <label class="set-row">
+          <span>Offset Y <b id="bgYVal">0</b></span>
+          <input type="range" id="bgY" min="-100" max="100" value="0" />
+        </label>
+      </div>
+
+      <div class="set-group" data-tab="bg">
+        <div class="set-head">BACKGROUND FILL</div>
+        <label class="set-row">
+          <span>Solid color</span>
+          <button class="sw" id="bgFillToggle">OFF</button>
+        </label>
+        <label class="set-row">
+          <span>Color</span>
+          <input type="color" id="bgColor" value="#040a0e" />
+        </label>
+        <label class="set-row">
+          <span>Opacity <b id="bgAlphaVal">100%</b></span>
+          <input type="range" id="bgAlpha" min="0" max="100" value="100" />
+        </label>
+      </div>
+
+      <div class="set-group" data-tab="universe">
+        <div class="set-head">UNIVERSE</div>
+        <label class="set-row">
+          <span>Show stars</span>
+          <button class="sw" id="starShowToggle">ON</button>
+        </label>
+        <div id="starOpts">
+        <div class="set-sub">Appearance</div>
+        <label class="set-row">
+          <span>Preset</span>
+          <div class="holo-dd" id="starPresetSelect"></div>
+        </label>
+        <label class="set-row">
+          <span>Style</span>
+          <div class="holo-dd" id="starStyleSelect"></div>
+        </label>
+        <label class="set-row">
+          <span>Star shape</span>
+          <div class="holo-dd" id="starShapeSelect"></div>
+        </label>
+        <label class="set-row">
+          <span>Star color</span>
+          <input type="color" id="starColor" value="#beeeff" />
+        </label>
+        <label class="set-row">
+          <span>Colored stars</span>
+          <button class="sw off" id="starColorfulToggle">OFF</button>
+        </label>
+
+        <div class="set-sub">Motion &amp; field</div>
+        <label class="set-row slider">
+          <span>Speed <b id="starSpeedVal">100%</b></span>
+          <input type="range" id="starSpeed" min="0" max="300" value="100" />
+        </label>
+        <label class="set-row slider">
+          <span>Density <b id="starDensityVal">100%</b></span>
+          <input type="range" id="starDensity" min="20" max="200" value="100" />
+        </label>
+        <label class="set-row slider">
+          <span>Star size <b id="starSizeVal">100%</b></span>
+          <input type="range" id="starSize" min="50" max="300" value="100" />
+        </label>
+        <label class="set-row slider">
+          <span>Twinkle <b id="starTwinkleVal">60%</b></span>
+          <input type="range" id="starTwinkle" min="0" max="100" value="60" />
+        </label>
+        <label class="set-row slider">
+          <span>Horizon Y <b id="starVpVal">46%</b></span>
+          <input type="range" id="starVp" min="15" max="85" value="46" />
+        </label>
+
+        <div class="set-sub">Background</div>
+        <label class="set-row">
+          <span>Space bg color</span>
+          <input type="color" id="starBgColor" value="#02040a" />
+        </label>
+        <label class="set-row slider">
+          <span>Space bg fill <b id="starBgAlphaVal">0%</b></span>
+          <input type="range" id="starBgAlpha" min="0" max="100" value="0" />
+        </label>
+
+        <div class="set-sub">Behavior</div>
+        <label class="set-row">
+          <span>Motion trails</span>
+          <button class="sw off" id="starTrailsToggle">OFF</button>
+        </label>
+        <label class="set-row">
+          <span>Mouse parallax</span>
+          <button class="sw off" id="starParallaxToggle">OFF</button>
+        </label>
+        <label class="set-row">
+          <span>React to throttle</span>
+          <button class="sw" id="starReactiveToggle">ON</button>
+        </label>
+        <label class="set-row">
+          <span>Reset universe</span>
+          <button class="sw danger-sw" id="starReset">RESET</button>
+        </label>
+        </div>
+      </div>
+
+      <div class="set-group" data-tab="system">
+        <div class="set-head">GRID</div>
+        <label class="set-row">
+          <span>Snap to grid</span>
+          <button class="sw" id="snapToggle">ON</button>
+        </label>
+        <label class="set-row">
+          <span>Cell size <b id="gridVal">16px</b></span>
+          <input type="range" id="gridSize" min="4" max="48" step="2" value="16" />
+        </label>
+        <label class="set-row">
+          <span>Show grid</span>
+          <button class="sw" id="gridShowToggle">OFF</button>
+        </label>
+      </div>
+
+      <div class="set-group" data-tab="system">
+        <div class="set-head">WINDOW</div>
+        <label class="set-row">
+          <span>Pin on top</span>
+          <button class="sw off" id="pinToggle">OFF</button>
+        </label>
+        <label class="set-row">
+          <span>Click-through</span>
+          <button class="sw off" id="clickThroughToggle">OFF</button>
+        </label>
+        <label class="set-row">
+          <span>App opacity <b id="appOpacityVal">100%</b></span>
+          <input type="range" id="appOpacity" min="20" max="100" value="100" />
+        </label>
+        <label class="set-row">
+          <span>Display</span>
+          <div class="holo-dd" id="displaySelect"></div>
+        </label>
+      </div>
+
+      <div class="set-group" data-tab="system">
+        <div class="set-head">LAYOUT</div>
+        <label class="set-row">
+          <span>Reset all panels</span>
+          <button class="sw danger-sw" id="resetLayout">RESET</button>
+        </label>
+      </div>
+
+      <div class="set-group" data-tab="panels">
+        <div class="hub-body" id="hubBody"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ HOTBAR: always-on quick actions ============ -->
+  <div class="hotbar" id="hotbar">
+    <div class="hotbar-head drag">···</div>
+    <div class="hotbar-row">
+    <button class="hotbar-btn" id="hbBg" title="Toggle transparent background">
+      <span class="hotbar-ico">◐</span><span class="hotbar-label">BG</span>
+    </button>
+    <button class="hotbar-btn" id="hbHolo" title="Show / hide holo-mode panels">
+      <span class="hotbar-ico">◈</span><span class="hotbar-label">HOLO</span>
+    </button>
+    <button class="hotbar-btn" id="hbPin" title="Pin window on top">
+      <span class="hotbar-ico">↥</span><span class="hotbar-label">PIN</span>
+    </button>
+    <button class="hotbar-btn" id="hbSettings" title="Show / hide settings">
+      <span class="hotbar-ico">◇</span><span class="hotbar-label">SETTINGS</span>
+    </button>
+    <button class="hotbar-btn danger" id="hbQuit" title="Close app">
+      <span class="hotbar-ico">×</span><span class="hotbar-label">CLOSE</span>
+    </button>
+    </div>
+  </div>
+
+  <!-- Atmospheric overlays -->
+  <div class="vignette"></div>
+  <div class="glass"></div>
+  <div class="scanlines"></div>
+
+  <script src="../../node_modules/@xterm/xterm/lib/xterm.js"></script>
+  <script src="../../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+  <script src="panels.js"></script>
+  <script src="renderer.js"></script>
+  <script src="holo.js"></script>
+  <script src="hub.js"></script>
+  <script src="control.js"></script>
+  <script src="hotbar.js"></script>
+  <script src="passthrough.js"></script>
+</body>
+</html>

@@ -1,0 +1,900 @@
+:root {
+  --hud: #aee9ff;            /* thin projected HUD lines (near-white cyan) */
+  --hud-soft: rgba(174, 233, 255, 0.55);
+  --hud-dim: rgba(174, 233, 255, 0.16);
+  --amber: #ffb24d;
+  --warn: #ff5470;
+  --good: #6effb0;
+
+  /* Dark composite/metal hull, like Starfield's matte cockpit */
+  --hull-1: #20262c;
+  --hull-2: #11161b;
+  --hull-3: #060a0e;
+  --hull-edge: rgba(120, 150, 165, 0.35);
+  --bevel-hi: rgba(190, 215, 230, 0.22);
+  --bevel-lo: rgba(0, 0, 0, 0.7);
+  --screen-bg: rgba(8, 16, 22, 0.72);
+  --line: rgba(174, 233, 255, 0.22);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: transparent;
+  font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+  color: var(--hud); user-select: none; cursor: default; }
+
+/* ===================== STARFIELD ===================== */
+#stars { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+
+/* ===================== AI COCKPIT FRAME ===================== */
+/* Generated cockpit plate: fills the screen, its window area is transparent
+   so the desktop/starfield shows through. Sits above the starfield but below
+   the HUD and dashboard so the projected UI reads on top of the hull. */
+.cockpit-img { position: fixed; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; object-position: center bottom;
+  pointer-events: none; z-index: 5;
+  /* Zoom + vertical offset (Settings) and lift (raise/lower) via CSS vars. */
+  transform: translateY(calc(var(--bg-y, 0%) + var(--bg-lift, 0px))) scale(var(--bg-zoom, 1));
+  transform-origin: center bottom;
+  transition: transform .7s cubic-bezier(.55, .06, .2, 1);
+  filter: drop-shadow(0 0 30px rgba(0,0,0,0.5)); }
+body.ghost .cockpit-img { opacity: .4; }
+
+/* Solid background fill behind everything (optional, set in Settings). */
+.bg-fill { position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background: transparent; }
+
+/* Snap-grid overlay, faint cyan lines; toggled on while dragging / via Settings. */
+.grid-overlay { position: fixed; inset: 0; z-index: 6; pointer-events: none;
+  opacity: 0; transition: opacity .15s;
+  background-image:
+    linear-gradient(rgba(174,233,255,0.10) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(174,233,255,0.10) 1px, transparent 1px); }
+.grid-overlay.on { opacity: 1; }
+
+/* ===================== HULL: A-FRAME CANOPY ===================== */
+/* Replaced by the AI-generated cockpit plate (.cockpit-img); hidden to avoid a
+   double frame. Re-enable by setting display:block to use the CSS hull instead. */
+.canopy { position: fixed; inset: 0; pointer-events: none; z-index: 8; display: none; }
+
+/* Top crossbar joining the pillars */
+.crossbar {
+  position: absolute; top: 0; left: 7%; right: 7%; height: 54px;
+  background: linear-gradient(180deg, var(--hull-1), var(--hull-3));
+  border-bottom: 1px solid var(--hull-edge);
+  box-shadow: inset 0 1px 0 var(--bevel-hi), 0 4px 14px rgba(0,0,0,0.6);
+  clip-path: polygon(0 0, 100% 0, 96% 100%, 4% 100%);
+}
+
+/* Angled A-pillars: THIN diagonal struts, so the windshield stays mostly glass */
+.pillar { position: absolute; bottom: 0; top: 0; width: 30%; }
+.pillar.left  { left: 0;  }
+.pillar.right { right: 0; }
+.pillar-face {
+  position: absolute; inset: 0;
+  background:
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0 2px, transparent 2px 5px),
+    linear-gradient(100deg, var(--hull-2), var(--hull-1) 30%, var(--hull-3));
+  box-shadow: inset 0 0 40px rgba(0,0,0,0.7);
+}
+/* A constant-width diagonal band: bottom-outer corner up to the crossbar.
+   Both ends are narrow, so the lower corners of the desktop stay visible. */
+.pillar.left  .pillar-face { clip-path: polygon(0 100%, 16% 100%, 100% 0, 84% 0); }
+.pillar.right .pillar-face { clip-path: polygon(100% 100%, 84% 100%, 0 0, 16% 0); }
+/* Bright machined edge running along the inner side of the band */
+.pillar-edge { position: absolute; inset: 0; }
+.pillar.left  .pillar-edge { clip-path: polygon(14% 100%, 16% 100%, 100% 0, 98% 0);
+  background: linear-gradient(var(--bevel-hi), var(--hud-dim)); }
+.pillar.right .pillar-edge { clip-path: polygon(86% 100%, 84% 100%, 0 0, 2% 0);
+  background: linear-gradient(var(--bevel-hi), var(--hud-dim)); }
+/* Hazard stripe + escape label, riding along the diagonal band (angle ~40deg) */
+.warn-stripe { position: absolute; width: 40px; height: 8px; top: 14%;
+  background: repeating-linear-gradient(45deg, var(--amber) 0 6px, #1a1206 6px 12px); opacity: .75; }
+.pillar.left  .warn-stripe { left: 64%; transform: rotate(40deg); }
+.pillar.right .warn-stripe { right: 64%; transform: rotate(-40deg); }
+.pillar-label { position: absolute; top: 22%; font-size: 10px; letter-spacing: 3px;
+  color: rgba(220,235,245,0.45); white-space: nowrap; }
+.pillar.left  .pillar-label { left: 52%; transform: rotate(40deg); transform-origin: left; }
+.pillar.right .pillar-label { right: 52%; transform: rotate(-40deg); transform-origin: right; }
+
+/* ===================== HUD (thin projected) ===================== */
+.hud { position: fixed; inset: 0; pointer-events: none; z-index: 7;
+  text-shadow: 0 0 6px var(--hud-soft); }
+.hud-top, .hud-bal, .hud-las { position: absolute; font-size: 13px; letter-spacing: 2px;
+  color: var(--hud); opacity: .9; }
+.hud-top em { font-style: normal; opacity: .6; font-size: 11px; }
+.hud-top { top: 22%; left: 50%; transform: translateX(-50%); }
+.hud-bal { top: 33%; left: 37%; } .hud-las { top: 33%; right: 37%; }
+.hud-bal b, .hud-las b { font-weight: 700; }
+
+/* Reticle: Starfield-style — fine arcs, tick ring, chevrons, center pip */
+.reticle { position: absolute; top: 46%; left: 50%; transform: translate(-50%,-50%);
+  width: 300px; height: 300px; }
+
+/* Faint ring of radial ticks just inside the main arc */
+.ticks { position: absolute; inset: 18px; border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg,
+    var(--hud-soft) 0 0.6deg, transparent 0.6deg 6deg);
+  -webkit-mask: radial-gradient(transparent 88%, #000 90%, #000 95%, transparent 96%);
+  mask: radial-gradient(transparent 88%, #000 90%, #000 95%, transparent 96%);
+  opacity: .5; animation: spin 60s linear infinite; }
+
+/* Main arc: thin, two segments with gaps top & bottom */
+.arc, .arc-thin { position: absolute; inset: 0; border-radius: 50%;
+  -webkit-mask: radial-gradient(transparent 70.5%, #000 71.5%, #000 73%, transparent 74%);
+  mask: radial-gradient(transparent 70.5%, #000 71.5%, #000 73%, transparent 74%); }
+.arc { background: conic-gradient(from 90deg,
+    transparent 0 14deg, var(--hud) 14deg 166deg,
+    transparent 166deg 194deg, var(--hud) 194deg 346deg, transparent 346deg 360deg); }
+/* Inner thin arc, counter-rotating */
+.arc-thin { width: 214px; height: 214px; inset: 43px;
+  background: conic-gradient(from 90deg, transparent 0 34deg, var(--hud-soft) 34deg 146deg,
+    transparent 146deg 214deg, var(--hud-soft) 214deg 326deg, transparent 326deg 360deg);
+  -webkit-mask: radial-gradient(transparent 82%, #000 84%, transparent 87%);
+  mask: radial-gradient(transparent 82%, #000 84%, transparent 87%);
+  animation: spin 80s linear infinite reverse; }
+
+/* Small caps marking the arc gaps (top / sides) */
+.arc-cap { position: absolute; background: var(--hud); box-shadow: 0 0 5px var(--hud-soft); }
+.arc-cap.top { top: 0; left: 50%; width: 2px; height: 10px; transform: translateX(-50%); }
+.arc-cap.left { left: -4px; top: 50%; width: 10px; height: 2px; transform: translateY(-50%); }
+.arc-cap.right { right: -4px; top: 50%; width: 10px; height: 2px; transform: translateY(-50%); }
+
+/* Two angled chevrons below the center pip (like Starfield's pitch ladder) */
+.chevron { position: absolute; top: 56%; width: 26px; height: 10px;
+  border-bottom: 2px solid var(--hud); opacity: .85; }
+.chevron.cl { left: 50%; margin-left: -42px; transform: skewX(34deg);
+  border-right: 2px solid var(--hud); }
+.chevron.cr { left: 50%; margin-left: 16px; transform: skewX(-34deg);
+  border-left: 2px solid var(--hud); }
+
+/* Center target pip */
+.target { position: absolute; top: 50%; left: 50%; width: 14px; height: 14px;
+  border: 2px solid var(--hud); border-radius: 50%; transform: translate(-50%,-50%);
+  box-shadow: 0 0 6px var(--hud-soft), inset 0 0 4px var(--hud-soft); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Speed (lower-left) — angled segmented bar */
+.hud-speed { position: absolute; left: 21%; bottom: 26%; }
+.speed-bar { width: 120px; height: 26px; transform: skewX(-22deg);
+  background: repeating-linear-gradient(90deg, var(--hud-dim) 0 5px, transparent 5px 9px);
+  border-bottom: 1px solid var(--line); position: relative; }
+.speed-bar span { position: absolute; left: 0; bottom: 0; height: 100%; width: 70%;
+  background: repeating-linear-gradient(90deg, var(--hud-soft) 0 5px, transparent 5px 9px); }
+.speed-label { font-size: 12px; letter-spacing: 2px; margin-top: 4px; }
+.speed-label b { font-size: 16px; font-weight: 700; }
+.hud-boost { position: absolute; left: 50%; bottom: 21%; transform: translateX(-50%);
+  font-size: 11px; letter-spacing: 2px; opacity: .7; }
+.boost-bar { display: inline-block; width: 60px; height: 6px; vertical-align: middle;
+  margin-left: 6px; background: repeating-linear-gradient(90deg, var(--hud-soft) 0 4px, transparent 4px 7px); }
+
+/* Hull + ship (lower-right) */
+.hud-hull { position: absolute; right: 4%; bottom: 26%; display: flex; flex-direction: column;
+  align-items: center; gap: 4px; color: var(--hud); }
+.ship { width: 56px; height: 70px; opacity: .8; filter: drop-shadow(0 0 4px var(--hud-soft)); }
+.hull-readout { font-size: 12px; letter-spacing: 2px; }
+.hull-readout b { font-size: 16px; font-weight: 700; }
+
+/* ===================== DASHBOARD: MFD ROW ===================== */
+.dash { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9;
+  display: flex; align-items: flex-end; justify-content: center; gap: 10px; padding: 0 16px 12px;
+  height: 220px; pointer-events: none;
+  background: transparent; /* space stays fully transparent — only the panels are opaque */
+}
+.dash > * { pointer-events: auto; }
+/* Panels share the row and shrink to fit — far-left/right never clip off-screen */
+.mfd { position: relative; flex: 1 1 0; min-width: 0; max-width: 240px; height: 188px; padding: 12px;
+  background: linear-gradient(160deg, var(--hull-1), var(--hull-3));
+  border: 1px solid var(--hull-edge); border-radius: 8px;
+  box-shadow: inset 0 1px 0 var(--bevel-hi), inset 0 -3px 10px var(--bevel-lo), 0 6px 18px rgba(0,0,0,0.6);
+  display: flex; flex-direction: column; gap: 8px; overflow: hidden auto; }
+/* Keep the panel title pinned while the body scrolls under it. */
+.mfd > .mfd-head { position: sticky; top: -12px; z-index: 2;
+  margin: -12px -12px 0; padding: 12px 12px 6px;
+  background: linear-gradient(160deg, var(--hull-1), var(--hull-3)); }
+.mfd.center { flex: 1.2 1 0; max-width: 270px; height: 206px; }
+.mfd.small { flex: 0.7 1 0; max-width: 160px; }
+/* Glowing glass screen inside the bezel */
+.mfd-bezel { position: absolute; inset: 8px; border-radius: 5px; pointer-events: none;
+  background: radial-gradient(120% 120% at 50% 0%, rgba(80,180,210,0.06), transparent 60%);
+  box-shadow: inset 0 0 24px rgba(0,0,0,0.7), inset 0 0 1px var(--line); }
+.mfd-head { font-size: 10px; letter-spacing: 3px; color: var(--hud); opacity: .8;
+  border-bottom: 1px solid var(--line); padding-bottom: 5px; z-index: 1; }
+.mfd-foot { margin-top: auto; display: flex; justify-content: space-between; align-items: center;
+  font-size: 9px; opacity: .8; z-index: 1; }
+
+/* Power bus (far-left) */
+.bus { display: flex; gap: 8px; height: 100%; align-items: flex-end; z-index: 1; }
+.bus-col { flex: 1; display: flex; flex-direction: column; gap: 3px; align-items: center; }
+.bus-col i { width: 100%; height: 14px; border-radius: 2px;
+  background: rgba(255,255,255,0.06); border: 1px solid var(--line); }
+.bus-col.on i { background: var(--good); box-shadow: 0 0 6px var(--good); }
+.bus-col label { font-size: 8px; letter-spacing: 1px; opacity: .6; margin-top: 4px; }
+
+/* Gauges */
+.gauge { display: grid; grid-template-columns: 34px 1fr 38px; align-items: center; gap: 6px;
+  font-size: 10px; z-index: 1; }
+.gauge label { opacity: .6; } .gauge b { text-align: right; font-weight: 700; }
+.gauge .bar { height: 9px; border: 1px solid var(--line); border-radius: 2px; padding: 1px;
+  background: rgba(0,0,0,0.4); overflow: hidden;
+  -webkit-mask: repeating-linear-gradient(90deg, #000 0 4px, transparent 4px 6px); }
+.gauge .bar span { display: block; height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--good), var(--hud)); transition: width .6s; }
+.dials { display: flex; gap: 10px; margin-top: auto; justify-content: center; z-index: 1; }
+.dial { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line);
+  position: relative; box-shadow: inset 0 0 8px rgba(0,0,0,0.7); }
+.needle { position: absolute; left: 50%; bottom: 50%; width: 2px; height: 13px; background: var(--hud);
+  transform-origin: bottom; transform: rotate(0deg); transition: transform .6s; box-shadow: 0 0 4px var(--hud-soft); }
+
+/* Targeting grid (center) */
+.tgt-grid { flex: 1; margin: 2px 0; border: 1px solid var(--line); border-radius: 4px;
+  background:
+    linear-gradient(var(--line) 1px, transparent 1px) 0 0/100% 20px,
+    linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0/20px 100%,
+    rgba(0,0,0,0.35);
+  position: relative; z-index: 1; }
+.tgt-cross { position: absolute; top: 50%; left: 50%; width: 22px; height: 22px;
+  transform: translate(-50%,-50%);
+  background: linear-gradient(var(--hud),var(--hud)) center/2px 100% no-repeat,
+    linear-gradient(var(--hud),var(--hud)) center/100% 2px no-repeat; opacity: .7; }
+.clock { font-size: 13px; font-weight: 700; }
+
+/* Radar */
+.radar { flex: 1; position: relative; border-radius: 50%; border: 1px solid var(--line);
+  overflow: hidden; align-self: center; aspect-ratio: 1; max-height: 96px;
+  background: radial-gradient(circle, rgba(20,60,70,0.4), rgba(0,0,0,0.5)); z-index: 1; }
+.radar-grid { position: absolute; inset: 0;
+  background:
+    radial-gradient(circle, transparent 0 32%, var(--line) 32% 33%, transparent 33%),
+    radial-gradient(circle, transparent 0 64%, var(--line) 64% 65%, transparent 65%); }
+.radar-grid::before, .radar-grid::after { content:""; position:absolute; background: var(--line); }
+.radar-grid::before { top:0; bottom:0; left:50%; width:1px; }
+.radar-grid::after { left:0; right:0; top:50%; height:1px; }
+.sweep { position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(var(--hud-soft) 0deg, transparent 55deg 360deg);
+  animation: spin 3s linear infinite; }
+.blip { position: absolute; width: 5px; height: 5px; border-radius: 50%; background: var(--good);
+  box-shadow: 0 0 6px var(--good); transform: translate(-50%,-50%); animation: blink 2s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .25; } }
+
+/* Buttons / selects */
+.sw { background: rgba(0,0,0,0.4); color: var(--hud); border: 1px solid var(--line);
+  border-radius: 5px; padding: 6px 8px; font: inherit; font-size: 9px; letter-spacing: 1px; cursor: pointer; }
+.sw em { font-style: normal; color: var(--good); } .sw.off em { color: var(--warn); }
+.sw:hover { filter: brightness(1.3); }
+.throttle-track { width: 100%; height: 14px; border: 1px solid var(--line); border-radius: 7px;
+  overflow: hidden; background: rgba(0,0,0,0.4); z-index: 1;
+  -webkit-mask: repeating-linear-gradient(90deg, #000 0 5px, transparent 5px 8px); }
+.throttle-fill { height: 100%; width: 68%; background: linear-gradient(90deg, var(--good), var(--amber)); transition: width .3s; }
+.thr-val { font-size: 14px; font-weight: 700; text-align: center; z-index: 1; }
+#display { background: rgba(0,0,0,0.4); color: var(--hud); border: 1px solid var(--line);
+  border-radius: 5px; padding: 5px; font: inherit; font-size: 9px; cursor: pointer; z-index: 1; }
+#display option { background: #04121a; }
+.danger { background: rgba(40,0,10,0.4); color: var(--warn); border: 1px solid var(--warn);
+  border-radius: 5px; padding: 7px; font: inherit; font-size: 10px; letter-spacing: 1px; cursor: pointer; z-index: 1; }
+.danger:hover { background: var(--warn); color: #04121a; }
+.mode { font-size: 9px; text-align: center; letter-spacing: 1px; opacity: .7; z-index: 1; }
+.mode.ghost { color: var(--warn); }
+
+/* ===================== CANOPY LIFT ===================== */
+/* Clickable tab on the opaque top crossbar — raises/lowers the cockpit so more
+   of the desktop is exposed. Stays pinned to the screen top in both states. */
+.canopy-tab { position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+  z-index: 9999; pointer-events: auto; cursor: pointer;
+  display: flex; align-items: center; gap: 8px; padding: 6px 22px 8px;
+  border-radius: 0 0 10px 10px; font-size: 10px; letter-spacing: 3px;
+  color: var(--hud-soft);
+  background: linear-gradient(180deg, rgba(20,30,38,0.85), rgba(6,10,14,0.2));
+  border: 1px solid var(--hull-edge); border-top: none;
+  text-shadow: 0 0 6px var(--hud-soft); transition: color .2s, background .2s; }
+.canopy-tab:hover { color: var(--hud); background: linear-gradient(180deg, rgba(40,60,72,0.9), rgba(6,10,14,0.3)); }
+.canopy-chevron { font-size: 14px; line-height: 1; transition: transform .7s cubic-bezier(.55,.06,.2,1); }
+body.raised .canopy-chevron { transform: rotate(180deg); }
+body.ghost .canopy-tab { opacity: .4; }
+
+/* When raised: the hull AND every panel slide up by the same --bg-lift amount,
+   so the whole cockpit moves as one and panels keep their relative positions. */
+.hud, .mfd, .console { transition: transform .7s cubic-bezier(.55, .06, .2, 1); }
+body.raised .hud { transform: translateY(var(--bg-lift, 0px)); }
+body.raised .mfd { transform: translateY(var(--bg-lift, 0px)); }
+/* Console keeps its horizontal centering (unless it's been dragged = floating). */
+body.raised .console { transform: translateX(-50%) translateY(var(--bg-lift, 0px)); }
+
+/* ===================== HOLOGRAM WIDGETS ===================== */
+/* Projected holo panels: translucent cyan glass with glow, scanlines & flicker,
+   floating in the windshield. Draggable/resizable via the panel system. */
+.holo { position: fixed; z-index: 9; width: 220px; pointer-events: auto;
+  color: #cdf4ff; font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+  background: linear-gradient(180deg, rgba(30,110,150,0.16), rgba(10,45,65,0.10));
+  border: 1px solid rgba(120,230,255,0.45); border-radius: 8px;
+  box-shadow: 0 0 20px rgba(80,200,255,0.22), inset 0 0 26px rgba(80,200,255,0.10);
+  backdrop-filter: blur(1px); -webkit-backdrop-filter: blur(1px);
+  overflow: hidden; animation: holo-flick 5s infinite steps(50);
+  transition: transform .7s cubic-bezier(.55,.06,.2,1); }
+.holo[hidden] { display: none; }
+.holo::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2;
+  background: repeating-linear-gradient(0deg, rgba(130,235,255,0.07) 0 1px, transparent 1px 3px);
+  mix-blend-mode: screen; }
+body.raised .holo { transform: translateY(var(--bg-lift, 0px)); }
+@keyframes holo-flick { 0%,96%,100% { opacity: .96; } 97% { opacity: .78; } 98% { opacity: 1; } 99% { opacity: .85; } }
+
+.holo-bar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: move;
+  font-size: 10px; letter-spacing: 2px; color: #e6faff;
+  border-bottom: 1px solid rgba(120,230,255,0.25);
+  text-shadow: 0 0 8px rgba(120,230,255,0.85); }
+.holo-ico { opacity: .9; }
+.holo-x { margin-left: auto; background: transparent; color: #cdf4ff;
+  border: 1px solid rgba(120,230,255,0.4); border-radius: 4px; width: 18px; height: 16px;
+  font-size: 11px; line-height: 1; cursor: pointer; }
+.holo-x:hover { background: rgba(120,230,255,0.25); }
+.holo-win { background: transparent; color: #cdf4ff; margin-left: auto;
+  border: 1px solid rgba(120,230,255,0.4); border-radius: 4px; width: 18px; height: 16px;
+  font-size: 11px; line-height: 1; cursor: pointer; }
+.holo-win:hover { background: rgba(120,230,255,0.25); }
+.holo-min, .holo-max, .holo-hd { background: transparent; color: #cdf4ff; margin-left: auto;
+  border: 1px solid rgba(120,230,255,0.4); border-radius: 4px; width: 18px; height: 16px;
+  font-size: 11px; line-height: 1; cursor: pointer; }
+.holo-min:hover, .holo-max:hover, .holo-hd:hover { background: rgba(120,230,255,0.25); }
+.holo--max .holo-max { background: rgba(120,230,255,0.25); }
+.holo-hd { width: auto; padding: 0 4px; font-size: 8px; letter-spacing: 1px; }
+.holo--hd .holo-hd { background: rgba(120,230,255,0.25); }
+/* HD mode: clean feed — the title bar floats over the video and it plus the
+   camera control bar stay hidden until the pointer is over the panel. */
+.holo--hd .holo-bar { opacity: 0; transition: opacity .15s; border-bottom: none;
+  position: absolute; left: 0; right: 0; top: 0; z-index: 6;
+  background: linear-gradient(180deg, rgba(5,20,30,0.6), transparent); }
+.holo--hd:hover .holo-bar { opacity: 1; }
+/* Drop the controls below the floating bar so the two don't overlap. */
+.holo--hd .holo-cam-ctl { opacity: 0; top: 34px; }
+.holo--hd .holo-cam:hover .holo-cam-ctl { opacity: 1; }
+/* Biggest HD step: the panel reaches the top of the screen — sink the RAISE
+   COCKPIT tab behind it (panel is z-index 9) so it doesn't float over the feed. */
+body.cam-hd-max .canopy-tab { z-index: 8; }
+/* Only the first button of the trailing group owns the margin-left:auto spacer;
+   any button following another sits snug (works for every combo of buttons). */
+.holo-bar button + button { margin-left: 4px; }
+
+/* Window mode: the video becomes a pane of the cockpit — no frame, no glow,
+   no scanlines, dropped behind every other widget. The title bar fades out and
+   only reappears on hover so you can still move it or leave the mode. */
+.holo--window { z-index: 1 !important; border: none; border-radius: 0;
+  background: transparent; box-shadow: none; backdrop-filter: none;
+  -webkit-backdrop-filter: none; animation: none; }
+.holo--window::after { display: none; }
+.holo--window .holo-base { display: none; }
+.holo--window .holo-bar { opacity: 0; transition: opacity .15s; border-bottom: none;
+  position: absolute; left: 0; right: 0; top: 0; z-index: 3;
+  background: linear-gradient(180deg, rgba(5,20,30,0.6), transparent); }
+.holo--window:hover .holo-bar { opacity: 1; }
+/* In window mode the panel is the cockpit's glass — it must stay put when the
+   cockpit raises/lowers. panels.js sets the lift as an inline transform, so we
+   need !important to pin it in place. */
+.holo--window { transform: none !important; }
+.holo--window .holo-yt-open { opacity: 0; transition: opacity .15s; }
+.holo--window:hover .holo-yt-open { opacity: .65; }
+/* Exit-window-mode button: lives on <body>, floats above EVERYTHING so you can
+   always leave window mode even though the panel itself sits behind all widgets. */
+.win-exit { position: fixed; top: 8px; right: 8px;
+  z-index: 1000000; cursor: pointer; pointer-events: auto;
+  font-family: inherit; font-size: 8px; letter-spacing: 1px;
+  padding: 4px 7px; border-radius: 4px; color: #e6faff;
+  background: rgba(8,24,34,0.82); border: 1px solid rgba(120,230,255,0.5);
+  box-shadow: 0 0 12px rgba(80,200,255,0.35); opacity: .6; transition: opacity .15s; }
+.win-exit:hover { opacity: 1; background: rgba(120,230,255,0.3); }
+.holo-body { padding: 10px; position: relative; z-index: 1; text-shadow: 0 0 6px rgba(120,230,255,0.5); }
+.holo-base { position: absolute; left: 50%; bottom: -3px; transform: translateX(-50%);
+  width: 72%; height: 12px; pointer-events: none; filter: blur(3px);
+  background: radial-gradient(ellipse at center, rgba(120,230,255,0.55), transparent 70%); }
+
+/* Chrono */
+.hc-time { font-size: 30px; font-weight: 700; letter-spacing: 3px; text-align: center;
+  text-shadow: 0 0 14px rgba(120,230,255,0.8); }
+.hc-date { font-size: 10px; letter-spacing: 3px; text-align: center; opacity: .75; margin-top: 4px; }
+
+/* Systems mini-bars */
+.holo-row { display: flex; align-items: center; gap: 8px; font-size: 10px; margin: 7px 0; letter-spacing: 1px; }
+.holo-row > span { width: 30px; opacity: .8; }
+.holo-row > b { width: 34px; text-align: right; }
+.holo-bar2 { flex: 1; height: 7px; border: 1px solid rgba(120,230,255,0.4); border-radius: 3px; overflow: hidden;
+  background: rgba(0,0,0,0.25); }
+.holo-bar2 i { display: block; height: 100%; width: 30%;
+  background: linear-gradient(90deg, #6effb0, #7fe6ff); box-shadow: 0 0 8px rgba(120,230,255,0.6); transition: width .6s; }
+
+/* Star map + vessel SVGs */
+.holo-map, .holo-ship { width: 100%; display: block; filter: drop-shadow(0 0 5px rgba(120,230,255,0.7)); }
+.holo-orbit { transform-origin: 60px 60px; animation: spin 7s linear infinite; }
+.holo-ship-spin { transform-origin: 50% 55%; animation: spin 12s linear infinite; }
+
+/* Ship log */
+.holo-note { width: 100%; height: 96px; resize: none; background: rgba(0,20,30,0.25);
+  border: 1px solid rgba(120,230,255,0.3); border-radius: 5px; color: #cdf4ff; padding: 6px 8px;
+  font: inherit; font-size: 11px; outline: none; text-shadow: 0 0 5px rgba(120,230,255,0.4); }
+.holo-note::placeholder { color: rgba(160,220,240,0.4); }
+
+/* Notepad */
+.holo-pad { display: flex; flex-direction: column; height: 100%; gap: 6px; }
+.holo-pad-title { background: rgba(0,20,30,0.4); border: 1px solid rgba(120,230,255,0.3);
+  border-radius: 5px; color: #e6faff; padding: 5px 8px; font: inherit; font-size: 12px;
+  letter-spacing: .5px; outline: none; text-shadow: 0 0 5px rgba(120,230,255,0.4); }
+.holo-pad-title::placeholder { color: rgba(160,220,240,0.4); }
+.holo-pad-text { flex: 1 1 auto; min-height: 0; width: 100%; resize: none;
+  background: rgba(0,20,30,0.25); border: 1px solid rgba(120,230,255,0.3); border-radius: 5px;
+  color: #cdf4ff; padding: 6px 8px; font: inherit; font-size: 11px; line-height: 1.5;
+  outline: none; text-shadow: 0 0 5px rgba(120,230,255,0.4); }
+.holo-pad-text::placeholder { color: rgba(160,220,240,0.4); }
+.holo-pad-foot { display: flex; justify-content: space-between; align-items: center;
+  font-size: 9px; letter-spacing: .5px; opacity: .65; }
+.holo-pad-saved { color: #6effb0; }
+
+/* Title creator */
+.holo-title { display: flex; flex-direction: column; height: 100%; gap: 8px; }
+.holo-title-ctl { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.holo-title-color { width: 26px; height: 22px; padding: 0; border: 1px solid rgba(120,230,255,0.3);
+  border-radius: 4px; background: rgba(0,20,30,0.4); cursor: pointer; }
+.holo-title-holo { flex: 0 0 auto; }
+.holo-title-stage { flex: 1 1 auto; min-height: 0; display: flex; align-items: center;
+  justify-content: center; overflow: hidden; }
+.holo-title-text { width: 100%; text-align: center; background: transparent; border: 0;
+  outline: none; font-weight: 700; letter-spacing: 1px; line-height: 1.1; }
+.holo-title-text::placeholder { color: rgba(160,220,240,0.35); }
+.holo-title-stage { position: relative; }
+.holo-title-edit { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px;
+  display: none; align-items: center; justify-content: center; padding: 0; cursor: pointer;
+  border: 1px solid rgba(120,230,255,0.3); border-radius: 4px; background: rgba(0,20,30,0.5);
+  color: rgba(180,240,255,0.9); font-size: 12px; opacity: 0; transition: opacity .15s; }
+/* Done mode: drop the control bar + all panel chrome, show only the title.
+   The edit pencil fades in on hover so it stays re-editable. */
+.holo-title--done .holo-title-ctl { display: none; }
+.holo-title--done .holo-title-edit { display: flex; }
+.holo-title--done:hover .holo-title-edit { opacity: 1; }
+.holo--media:has(.holo-title--done) .holo-bar,
+.holo:has(.holo-title--done) .holo-bar { opacity: 0; transition: opacity .2s; }
+.holo:has(.holo-title--done):hover .holo-bar { opacity: 1; }
+
+/* Media widgets (image / video / map / spotify / camera): body fills the panel
+   edge-to-edge and the content stretches to it. */
+.holo { display: flex; flex-direction: column; }
+.holo-body { flex: 1 1 auto; min-height: 0; }
+.holo--media .holo-body { padding: 0; }
+.holo-media { width: 100%; height: 100%; display: block; border: 0;
+  object-fit: contain; background: rgba(0,0,0,0.35); }
+.holo-yt-open { position: absolute; right: 8px; bottom: 8px; z-index: 2; cursor: pointer;
+  font-size: 9px; letter-spacing: 1px; padding: 3px 7px; border-radius: 3px;
+  color: rgba(180,240,255,0.9); background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(120,230,255,0.35); opacity: .65; transition: opacity .15s; }
+.holo-yt-open:hover { opacity: 1; }
+.holo-empty { display: flex; align-items: center; justify-content: center; height: 100%;
+  font-size: 10px; letter-spacing: 1px; opacity: .55; padding: 12px; text-align: center; }
+
+/* Folder browser */
+.holo-folder { display: flex; flex-direction: column; height: 100%; font-size: 11px; }
+.holo-folder-path { padding: 4px 8px; font-size: 9px; letter-spacing: .5px; opacity: .7;
+  border-bottom: 1px solid rgba(120,230,255,0.2); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; direction: rtl; text-align: left; }
+.holo-folder-list { flex: 1 1 auto; overflow-y: auto; padding: 4px; }
+.holo-file { display: flex; align-items: center; gap: 7px; padding: 4px 6px; border-radius: 4px;
+  cursor: pointer; }
+.holo-file:hover { background: rgba(120,230,255,0.14); }
+.holo-file-ico { opacity: .85; }
+.holo-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.holo-file.is-dir .holo-file-name { color: #e6faff; }
+
+/* Camera: live video with a control bar (source / resolution / fps) overlaid
+   top-left and a performance readout bottom-right. */
+.holo-cam { position: relative; width: 100%; height: 100%; }
+/* The <video> fills the panel but must NOT eat pointer events — otherwise it
+   sits over the control bar and swallows every click meant for the dropdowns. */
+.holo-cam .holo-media { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.holo-cam-ctl { position: absolute; top: 6px; left: 6px; right: 6px; z-index: 5; display: flex; gap: 4px;
+  flex-wrap: wrap; opacity: .5; transition: opacity .15s; }
+.holo-cam:hover .holo-cam-ctl { opacity: 1; }
+.holo-cam-dev { flex: 1 1 auto; min-width: 0; }
+.holo-cam-dev[hidden] { display: none; }
+.holo-cam-mic { flex: 1 1 auto; min-width: 0; }
+.holo-cam-mic[hidden] { display: none; }
+.holo-cam-aud { flex: 0 0 auto; }
+.holo-cam-aud[hidden] { display: none; }
+/* FX toggle: hologram effect on/off, styled to match the dropdown buttons. */
+.holo-cam-fx { flex: 0 0 auto; background: rgba(0,20,30,0.75); color: #cdf4ff;
+  border: 1px solid rgba(120,230,255,0.4); border-radius: 4px; font: inherit;
+  font-size: 10px; letter-spacing: .5px; padding: 3px 6px; cursor: pointer;
+  outline: none; transition: all .15s; }
+.holo-cam-fx:hover { background: rgba(120,230,255,0.22); border-color: rgba(120,230,255,0.7); }
+.holo-cam-fx.off { opacity: .5; text-decoration: line-through; }
+/* FX off: strip the hologram treatment (tint, scanlines, blur, flicker) from
+   this panel only — same idea as .holo--window, but keeping frame + title bar. */
+.holo--nofx { animation: none; backdrop-filter: none; -webkit-backdrop-filter: none;
+  background: rgba(8,20,28,0.55); }
+.holo--nofx::after { display: none; }
+
+/* Chrome-like browser widget: a navigation bar over an isolated <webview>. */
+.holo-web { display: flex; flex-direction: column; width: 100%; height: 100%; }
+.holo-web-bar { display: flex; align-items: center; gap: 4px; padding: 4px 6px;
+  background: rgba(0,18,28,0.85); border-bottom: 1px solid rgba(120,230,255,0.22); }
+.holo-web-btn { flex: 0 0 auto; width: 22px; height: 22px; display: flex; align-items: center;
+  justify-content: center; background: rgba(0,20,30,0.6); color: #cdf4ff; cursor: pointer;
+  border: 1px solid rgba(120,230,255,0.3); border-radius: 4px; font-size: 14px; line-height: 1;
+  transition: all .15s; }
+.holo-web-btn:hover { background: rgba(120,230,255,0.2); border-color: rgba(120,230,255,0.6); }
+.holo-web-btn:disabled { opacity: .3; cursor: default; }
+.holo-web-btn:disabled:hover { background: rgba(0,20,30,0.6); border-color: rgba(120,230,255,0.3); }
+.holo-web-url { flex: 1 1 auto; min-width: 0; height: 22px; padding: 0 8px; font: inherit;
+  font-size: 11px; letter-spacing: .3px; color: #e6faff; background: rgba(0,20,30,0.75);
+  border: 1px solid rgba(120,230,255,0.35); border-radius: 4px; outline: none; }
+.holo-web-url:focus { border-color: rgba(120,230,255,0.75); }
+/* webview must be display:flex itself, not just a flex child — as a plain
+   block/inline flex child it mis-reports its height to the guest and only the
+   first viewport paints (rest goes white). flex + explicit height fixes it. */
+.holo-web-view { display: flex; flex: 1 1 auto; width: 100%; height: 100%;
+  min-height: 0; background: #fff; object-fit: fill; }
+
+/* Custom dropdown (used by camera controls; replaces native <select>). */
+.holo-dd { position: relative; }
+.holo-dd-cur { display: flex; align-items: center; gap: 4px; width: 100%;
+  background: rgba(0,20,30,0.75); color: #cdf4ff; border: 1px solid rgba(120,230,255,0.4);
+  border-radius: 4px; font: inherit; font-size: 10px; letter-spacing: .5px; padding: 3px 6px;
+  outline: none; cursor: pointer; transition: all .15s; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.holo-dd-cur:hover { background: rgba(120,230,255,0.22); border-color: rgba(120,230,255,0.7); }
+.holo-dd-arr { margin-left: auto; font-size: 8px; opacity: .7; }
+.holo-dd-menu { display: none; position: absolute; top: calc(100% + 3px); left: 0; min-width: 100%;
+  z-index: 40; background: rgba(2,16,24,0.96); border: 1px solid rgba(120,230,255,0.5);
+  border-radius: 5px; box-shadow: 0 6px 18px rgba(0,0,0,0.6); overflow: hidden; max-height: 180px;
+  overflow-y: auto; }
+.holo-dd.open .holo-dd-menu { display: block; }
+/* Portaled menu: lives at <body> level with fixed positioning so it escapes the
+   panel's overflow/backdrop/opacity clipping. JS sets left/top/min-width. */
+.holo-dd-menu.portal { display: block; position: fixed; min-width: 0;
+  z-index: 9999; pointer-events: auto;
+  font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace; }
+.holo-dd-opt { display: block; width: 100%; text-align: left; background: transparent;
+  color: #cdf4ff; border: 0; font: inherit; font-size: 10px; letter-spacing: .5px;
+  padding: 5px 9px; cursor: pointer; white-space: nowrap; }
+.holo-dd-opt:hover { background: rgba(120,230,255,0.2); }
+.holo-dd-opt.sel { color: #6effb0; }
+.holo-cam-stat { position: absolute; right: 6px; bottom: 6px; font-size: 9px; letter-spacing: 1px;
+  color: #cdf4ff; background: rgba(0,20,30,0.6); border-radius: 3px; padding: 2px 5px;
+  opacity: 0; transition: opacity .15s; pointer-events: none;
+  text-shadow: 0 0 5px rgba(120,230,255,0.5); }
+.holo-cam:hover .holo-cam-stat { opacity: .6; }
+
+/* Task list */
+.holo-todo { display: flex; flex-direction: column; height: 100%; font-size: 11px; }
+.holo-todo-add input { width: 100%; background: rgba(0,20,30,0.4);
+  border: 1px solid rgba(120,230,255,0.3); border-radius: 5px; color: #cdf4ff;
+  padding: 5px 8px; font: inherit; font-size: 11px; outline: none;
+  text-shadow: 0 0 5px rgba(120,230,255,0.4); margin-bottom: 6px; }
+.holo-todo-add input::placeholder { color: rgba(160,220,240,0.4); }
+.holo-todo-list { flex: 1 1 auto; overflow-y: auto; }
+.holo-task { display: flex; align-items: center; gap: 7px; padding: 4px 4px; border-radius: 4px; }
+.holo-task:hover { background: rgba(120,230,255,0.1); }
+.holo-task-box { cursor: pointer; opacity: .9; }
+.holo-task-txt { flex: 1; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.holo-task.done .holo-task-txt { text-decoration: line-through; opacity: .5; }
+.holo-task-x { background: transparent; border: 0; color: #ff8aa0; cursor: pointer;
+  font-size: 13px; line-height: 1; opacity: 0; transition: opacity .15s; }
+.holo-task:hover .holo-task-x { opacity: .8; }
+.holo-task-x:hover { opacity: 1; }
+
+/* ===================== HOLO DOCK ===================== */
+.holo-dock { position: fixed; z-index: 11; left: 24px; top: 120px; width: 156px; pointer-events: auto;
+  background: linear-gradient(160deg, var(--hull-1), var(--hull-3));
+  border: 1px solid var(--hull-edge); border-radius: 8px; overflow: hidden;
+  box-shadow: inset 0 1px 0 var(--bevel-hi), inset 0 -3px 10px var(--bevel-lo), 0 8px 22px rgba(0,0,0,0.7);
+  transition: transform .7s cubic-bezier(.55,.06,.2,1); }
+.holo-dock[hidden] { display: none; }
+body.raised .holo-dock { transform: translateY(var(--bg-lift, 0px)); }
+.holo-dock-bar { cursor: move; font-size: 10px; letter-spacing: 2px; padding: 8px 10px; color: var(--hud);
+  border-bottom: 1px solid var(--line); background: linear-gradient(180deg, rgba(174,233,255,0.06), transparent); }
+.holo-dock-btns { display: flex; flex-direction: column; gap: 6px; padding: 8px; }
+.holo-btn { background: rgba(0,0,0,0.35); color: var(--hud); border: 1px solid var(--line);
+  border-radius: 5px; padding: 7px 9px; font: inherit; font-size: 10px; letter-spacing: 1px;
+  cursor: pointer; text-align: left; transition: all .15s; }
+.holo-btn:hover { filter: brightness(1.3); }
+.holo-btn.active { background: rgba(120,230,255,0.18); border-color: rgba(120,230,255,0.6);
+  color: #e6faff; box-shadow: 0 0 10px rgba(120,230,255,0.35); text-shadow: 0 0 6px rgba(120,230,255,0.7); }
+body.ghost .holo, body.ghost .holo-dock { opacity: .4; }
+
+/* ===================== PANEL HUB / MARKETPLACE ===================== */
+.hub-hidden { display: none !important; }
+
+/* Turn any solid panel (MFD, hub, dock, terminal, settings) into translucent
+   holographic glass. Generic so the HUB's INTERFACE section can toggle it. */
+.as-holo { background: linear-gradient(180deg, rgba(30,110,150,0.16), rgba(10,45,65,0.10)) !important;
+  border: 1px solid rgba(120,230,255,0.45) !important;
+  box-shadow: 0 0 20px rgba(80,200,255,0.22), inset 0 0 26px rgba(80,200,255,0.10) !important;
+  backdrop-filter: blur(1px); -webkit-backdrop-filter: blur(1px);
+  animation: holo-flick 5s infinite steps(50); color: #cdf4ff; }
+.as-holo .mfd-bezel { display: none; }
+.as-holo .mfd-head,
+.as-holo .hub-bar, .as-holo .holo-dock-bar,
+.as-holo .console-bar, .as-holo .settings-bar {
+  color: #e6faff; text-shadow: 0 0 8px rgba(120,230,255,0.85); }
+
+.hub { position: fixed; z-index: 12; left: 50%; top: 16%; width: 320px; transform: translateX(-50%);
+  pointer-events: auto; color: var(--hud);
+  background: linear-gradient(160deg, var(--hull-1), var(--hull-3));
+  border: 1px solid var(--hull-edge); border-radius: 8px; overflow: hidden;
+  box-shadow: inset 0 1px 0 var(--bevel-hi), inset 0 -3px 10px var(--bevel-lo), 0 8px 26px rgba(0,0,0,0.7); }
+.hub[hidden] { display: none; }
+.hub-bar { display: flex; align-items: center; cursor: move; font-size: 10px; letter-spacing: 2px;
+  padding: 8px 10px; color: var(--hud); border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(174,233,255,0.06), transparent); }
+.hub-title { flex: 1; }
+.hub-body { padding: 10px; max-height: 64vh; overflow-y: auto; }
+/* PANELS embedded in the settings panel: the settings body already scrolls,
+   so the hub body flows naturally without its own scrollbar or padding. */
+.settings .hub-body { padding: 0; max-height: none; overflow: visible; }
+.hub-section { font-size: 9px; letter-spacing: 3px; opacity: .55; margin: 14px 2px 6px;
+  display: flex; align-items: center; gap: 8px; }
+.hub-section::after { content: ''; flex: 1; height: 1px;
+  background: linear-gradient(90deg, rgba(120,230,255,0.25), transparent); }
+.hub-section:first-child { margin-top: 2px; }
+
+/* Search box */
+.hub-search { display: flex; align-items: center; gap: 7px; margin-bottom: 9px;
+  background: rgba(0,20,30,0.45); border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px;
+  transition: border-color .15s, box-shadow .15s; }
+.hub-search:focus-within { border-color: rgba(120,230,255,0.55);
+  box-shadow: 0 0 10px rgba(120,230,255,0.18), inset 0 0 8px rgba(120,230,255,0.06); }
+.hub-search-ico { opacity: .5; font-size: 12px; }
+.hub-search input { flex: 1; min-width: 0; background: transparent; border: 0; outline: none;
+  color: #e6faff; font: inherit; font-size: 11px; letter-spacing: 1px; }
+.hub-search input::placeholder { color: var(--hud); opacity: .35; letter-spacing: 1px; }
+
+/* Tabs — segmented control */
+.hub-tabs { display: flex; gap: 0; margin-bottom: 12px; padding: 3px; border-radius: 8px;
+  background: rgba(0,0,0,0.35); border: 1px solid var(--line); }
+.hub-tab { flex: 1; background: transparent; color: var(--hud); border: 0;
+  border-radius: 6px; padding: 7px 4px; font: inherit; font-size: 10px; letter-spacing: 2px;
+  cursor: pointer; opacity: .55; transition: all .15s; }
+.hub-tab:hover { opacity: .85; }
+.hub-tab.on { opacity: 1; background: rgba(120,230,255,0.16); color: #e6faff;
+  text-shadow: 0 0 6px rgba(120,230,255,0.6);
+  box-shadow: inset 0 0 0 1px rgba(120,230,255,0.4), 0 1px 6px rgba(0,0,0,0.4); }
+.hub-tab-n { display: inline-block; font-size: 8px; letter-spacing: 0; opacity: .6;
+  padding: 1px 5px; margin-left: 3px; border-radius: 8px; background: rgba(0,0,0,0.35);
+  vertical-align: middle; }
+.hub-tab.on .hub-tab-n { opacity: .9; background: rgba(120,230,255,0.22); }
+.hub-item { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 6px;
+  border: 1px solid rgba(120,230,255,0.10); background: rgba(0,0,0,0.22); margin-bottom: 5px;
+  transition: border-color .15s, background .15s; }
+.hub-item:hover { border-color: rgba(120,230,255,0.28); background: rgba(120,230,255,0.05); }
+.hub-ico { width: 18px; text-align: center; opacity: .8; font-size: 13px; }
+.hub-name { flex: 1; font-size: 11px; letter-spacing: 1px; }
+.hub-actions { display: flex; gap: 5px; }
+.hub-act { background: rgba(0,0,0,0.35); color: var(--hud); border: 1px solid var(--line);
+  border-radius: 5px; padding: 5px 8px; font: inherit; font-size: 9px; letter-spacing: 1px;
+  cursor: pointer; transition: all .15s; min-width: 56px; }
+.hub-act:hover { filter: brightness(1.35); border-color: rgba(120,230,255,0.45); }
+.hub-act.off { opacity: .5; }
+.hub-act.on { background: rgba(120,230,255,0.18); border-color: rgba(120,230,255,0.6);
+  color: #e6faff; text-shadow: 0 0 6px rgba(120,230,255,0.7); }
+.hub-act[hidden] { display: none; }
+.hub-act.danger-sw { color: #ff8aa0; border-color: rgba(255,90,112,0.35); min-width: 0; padding: 5px 9px; }
+.hub-act.danger-sw:hover { background: rgba(255,90,112,0.2); border-color: rgba(255,90,112,0.6); }
+.hub-muted { font-size: 10px; opacity: .45; letter-spacing: 1px; padding: 14px 6px; text-align: center; }
+
+/* ADD catalog: grid of type cards. */
+.hub-cat { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 6px; }
+.hub-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px;
+  padding: 13px 6px; min-height: 64px;
+  background: linear-gradient(165deg, rgba(120,230,255,0.05), rgba(0,0,0,0.28));
+  border: 1px solid rgba(120,230,255,0.16); border-radius: 8px;
+  color: var(--hud); font: inherit; cursor: pointer; transition: all .15s; }
+.hub-card:hover { border-color: rgba(120,230,255,0.6);
+  background: linear-gradient(165deg, rgba(120,230,255,0.16), rgba(120,230,255,0.06));
+  box-shadow: 0 0 12px rgba(120,230,255,0.3); transform: translateY(-1px); }
+.hub-card:active { transform: translateY(0); }
+.hub-card-ico { font-size: 20px; line-height: 1; }
+.hub-card-label { font-size: 8.5px; letter-spacing: 1px; opacity: .85; text-align: center; }
+
+/* Inline config form for the chosen widget type. */
+.hub-form { background: rgba(0,0,0,0.3); border: 1px solid rgba(120,230,255,0.3);
+  border-radius: 6px; padding: 8px; margin-bottom: 8px; }
+.hub-form[hidden] { display: none; }
+.hub-form-head { font-size: 10px; letter-spacing: 2px; color: #e6faff; margin-bottom: 6px;
+  text-shadow: 0 0 6px rgba(120,230,255,0.6); }
+.hub-field { margin-bottom: 6px; }
+.hub-field label { display: block; font-size: 9px; letter-spacing: 1px; opacity: .7; margin-bottom: 3px; }
+.hub-field-input { display: flex; gap: 4px; }
+.hub-field-input input { flex: 1; min-width: 0; background: rgba(0,20,30,0.4);
+  border: 1px solid rgba(120,230,255,0.3); border-radius: 4px; color: #cdf4ff;
+  padding: 5px 7px; font: inherit; font-size: 11px; outline: none; }
+.hub-pick { background: rgba(0,0,0,0.4); border: 1px solid rgba(120,230,255,0.3); border-radius: 4px;
+  color: var(--hud); cursor: pointer; padding: 0 8px; font-size: 13px; }
+.hub-pick:hover { background: rgba(120,230,255,0.18); }
+.hub-form-actions { display: flex; gap: 6px; margin-top: 8px; }
+.hub-form-actions .hub-act { flex: 1; min-width: 0; }
+
+/* ===================== PANEL DRAG / RESIZE ===================== */
+/* Title bars act as drag handles. */
+.mfd-head.drag, .console-bar, .settings-bar { cursor: move; }
+.mfd-head.drag { user-select: none; }
+body.panel-dragging { cursor: grabbing; }
+/* While dragging/resizing a panel, iframes (YouTube, Maps, Spotify) and media
+   would otherwise swallow the mouse and stall the gesture the moment the cursor
+   crosses them. Shield them so document-level mousemove keeps flowing. */
+body.panel-dragging iframe, body.panel-dragging .holo-media { pointer-events: none; }
+
+/* Resize grip injected into every panel's bottom-right corner. */
+.resize-grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px;
+  z-index: 30; cursor: nwse-resize;
+  background:
+    linear-gradient(135deg, transparent 50%, var(--hud-soft) 50% 60%, transparent 60% 72%,
+      var(--hud-soft) 72% 82%, transparent 82%);
+  opacity: .5; }
+.resize-grip:hover { opacity: 1; }
+
+/* ===================== SETTINGS PANEL ===================== */
+.settings { position: fixed; z-index: 12; right: 24px; top: 80px; width: 300px;
+  max-height: 80vh; display: flex; flex-direction: column; pointer-events: auto;
+  background: linear-gradient(160deg, var(--hull-1), var(--hull-3));
+  border: 1px solid var(--hull-edge); border-radius: 10px; overflow: hidden;
+  box-shadow: inset 0 1px 0 var(--bevel-hi), inset 0 -3px 10px var(--bevel-lo),
+    0 10px 30px rgba(0,0,0,0.7); }
+.settings[hidden] { display: none; }
+.settings-bar { display: flex; align-items: center; padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(174,233,255,0.06), transparent); }
+.settings-title { font-size: 10px; letter-spacing: 3px; color: var(--hud); opacity: .9; }
+.settings-tabs { display: flex; gap: 2px; padding: 6px 8px 0;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(174,233,255,0.04), transparent); }
+.set-tab { flex: 1; padding: 6px 4px; font-size: 9px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--hud); opacity: .5;
+  background: transparent; border: none; border-bottom: 2px solid transparent;
+  cursor: pointer; transition: opacity .15s, border-color .15s; }
+.set-tab:hover { opacity: .85; }
+.set-tab.active { opacity: 1; color: var(--good); border-bottom-color: var(--good); }
+.set-group[data-tab].hidden-tab { display: none; }
+.settings-bar .console-min { margin-left: auto; }
+.settings-body { padding: 10px 12px 14px; overflow-y: auto; display: flex;
+  flex-direction: column; gap: 14px; flex: 1 1 auto; min-height: 0; }
+.set-group { display: flex; flex-direction: column; gap: 9px; }
+.set-head { font-size: 9px; letter-spacing: 2px; color: var(--hud); opacity: .55;
+  border-bottom: 1px solid var(--hud-dim); padding-bottom: 4px; }
+.set-sub { font-size: 8px; letter-spacing: 1.5px; color: var(--hud); opacity: .4;
+  text-transform: uppercase; margin-top: 4px; }
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  min-height: 24px; font-size: 10px; letter-spacing: 1px; color: var(--hud); }
+.set-row > span { opacity: .85; white-space: nowrap; }
+.set-row > span b { color: var(--good); font-weight: 700; margin-left: 4px; }
+.set-row input[type="range"] { flex: 1; max-width: 130px; accent-color: var(--good);
+  height: 4px; cursor: pointer; }
+.set-row input[type="color"] { width: 44px; height: 22px; padding: 0; border: 1px solid var(--line);
+  border-radius: 4px; background: transparent; cursor: pointer; }
+/* slider rows: label on top, full-width track below — readable, not cramped */
+.set-row.slider { flex-direction: column; align-items: stretch; gap: 5px; min-height: 0; }
+.set-row.slider > span { display: flex; justify-content: space-between; opacity: .8; }
+.set-row.slider > span b { margin-left: 0; }
+.set-row.slider input[type="range"] { max-width: none; width: 100%; }
+.sw.off em, .sw.off { color: var(--warn); }
+.sw.danger-sw { color: var(--warn); border-color: var(--warn); }
+.sw.danger-sw:hover { background: var(--warn); color: #04121a; }
+body.ghost .settings { opacity: .4; }
+
+/* ===================== TERMINAL CONSOLE ===================== */
+.console { position: fixed; z-index: 10; left: 50%; bottom: 240px;
+  transform: translateX(-50%); width: min(720px, 70vw); height: 320px;
+  display: flex; flex-direction: column; pointer-events: auto;
+  background: linear-gradient(160deg, var(--hull-1), var(--hull-3));
+  border: 1px solid var(--hull-edge); border-radius: 10px;
+  box-shadow: inset 0 1px 0 var(--bevel-hi), inset 0 -3px 10px var(--bevel-lo),
+    0 10px 30px rgba(0,0,0,0.7); overflow: hidden; }
+.console[hidden] { display: none; }
+.console-bar { display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+  border-bottom: 1px solid var(--line); cursor: move;
+  background: linear-gradient(180deg, rgba(174,233,255,0.06), transparent); }
+.console-title { font-size: 10px; letter-spacing: 3px; color: var(--hud); opacity: .85; }
+.console-title em { font-style: normal; color: var(--good); opacity: .9; }
+.console-dot { width: 8px; height: 8px; border-radius: 50%; opacity: .7; }
+.console-dot[data-c="r"] { background: var(--warn); }
+.console-dot[data-c="y"] { background: var(--amber); }
+.console-min { margin-left: auto; background: transparent; color: var(--hud);
+  border: 1px solid var(--line); border-radius: 4px; width: 22px; height: 20px;
+  font: inherit; font-size: 14px; line-height: 1; cursor: pointer; }
+.console-min:hover { background: var(--warn); color: #04121a; border-color: var(--warn); }
+.console-tabs { display: flex; gap: 4px; margin-left: 10px; overflow-x: auto; }
+.console-tab { display: inline-flex; align-items: center; gap: 5px;
+  background: transparent; color: var(--hud); opacity: .55;
+  border: 1px solid rgba(174,233,255,.25); border-radius: 3px;
+  font-size: 9px; letter-spacing: 2px; padding: 2px 7px; cursor: pointer; }
+.console-tab.active { opacity: 1; color: var(--good); border-color: var(--good); }
+.console-tab:hover { opacity: .9; }
+.console-tab-x { opacity: .6; padding: 0 1px; }
+.console-tab-x:hover { opacity: 1; color: var(--warn); }
+.console-tab-add { background: transparent; color: var(--hud); opacity: .7;
+  border: 1px solid rgba(174,233,255,.25); border-radius: 3px;
+  font-size: 11px; line-height: 1; padding: 1px 6px; cursor: pointer; }
+.console-tab-add:hover { opacity: 1; border-color: var(--good); color: var(--good); }
+.console-tab-screen { height: 100%; }
+.console-tab-screen[hidden] { display: none; }
+.console-screen { flex: 1; padding: 8px 6px 6px 10px; overflow: hidden;
+  background: radial-gradient(120% 120% at 50% 0%, rgba(80,180,210,0.05), transparent 60%),
+    rgba(4,10,14,0.78); }
+.console-screen .xterm { height: 100%; }
+.console-screen .xterm-viewport { background: transparent !important;
+  scrollbar-width: thin; scrollbar-color: rgba(120,230,255,0.35) transparent; }
+.console-screen .xterm-viewport::-webkit-scrollbar { width: 8px; height: 8px; }
+.console-screen .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
+.console-screen .xterm-viewport::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(120,230,255,0.5), rgba(120,230,255,0.2));
+  border-radius: 4px; border: 1px solid rgba(120,230,255,0.15); }
+.console-screen .xterm-viewport::-webkit-scrollbar-thumb:hover { background: rgba(120,230,255,0.6); }
+body.ghost .console { opacity: .4; }
+
+/* ===================== OPTICAL OVERLAYS ===================== */
+.vignette { position: fixed; inset: 0; pointer-events: none; z-index: 4;
+  background: radial-gradient(135% 120% at 50% 40%, transparent 50%, rgba(0,0,0,0.6) 100%); }
+.glass { position: fixed; inset: 0; pointer-events: none; z-index: 6;
+  background:
+    linear-gradient(115deg, transparent 42%, rgba(180,230,255,0.045) 49%, transparent 56%),
+    radial-gradient(120% 80% at 35% 0%, rgba(150,220,255,0.05), transparent 55%); }
+.scanlines { position: fixed; inset: 0; pointer-events: none; z-index: 20;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,0.08) 0 1px, transparent 1px 3px);
+  mix-blend-mode: overlay; animation: flicker 6s infinite steps(60); }
+@keyframes flicker { 0%,97%,100% { opacity:.6; } 98% { opacity:.35; } 99% { opacity:.8; } }
+
+/* ===================== HOTBAR ===================== */
+/* Always-on quick-action bar, pinned bottom-center above every panel. */
+.hotbar { position: fixed; left: 50%; top: 14px; transform: translateX(-50%);
+  z-index: 9998; display: flex; flex-direction: column; gap: 4px; padding: 6px;
+  background: linear-gradient(180deg, rgba(12,26,34,0.92), rgba(4,12,18,0.92));
+  border: 1px solid var(--line); border-radius: 10px; pointer-events: auto;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.55), inset 0 0 12px rgba(120,230,255,0.08); }
+.hotbar-head { text-align: center; cursor: grab; color: var(--hud); opacity: .3;
+  font-size: 10px; line-height: 1; letter-spacing: 2px; user-select: none; }
+.hotbar-head:hover { opacity: .6; }
+.hotbar-row { display: flex; gap: 6px; flex: 1; align-items: stretch; }
+.hotbar-btn { display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; min-width: 54px; padding: 7px 9px; cursor: pointer;
+  background: rgba(0,0,0,0.35); color: var(--hud); border: 1px solid var(--line);
+  border-radius: 7px; font: inherit; letter-spacing: 1px; transition: filter .12s, background .12s; }
+.hotbar-btn:hover { filter: brightness(1.35); }
+.hotbar-ico { font-size: 13px; line-height: 1; opacity: .65; font-variant-emoji: text; }
+.hotbar-label { font-size: 8px; font-weight: 700; opacity: .8; }
+.hotbar-btn.active { background: rgba(120,230,255,0.16); border-color: var(--hud);
+  box-shadow: inset 0 0 8px rgba(120,230,255,0.3); }
+.hotbar-btn.danger { color: var(--warn); border-color: var(--warn); }
+.hotbar-btn.danger:hover { background: var(--warn); color: #04121a; }
+
+/* Holo-mode panels hidden by the hotbar HOLO toggle: both MFDs switched to holo
+   style (.as-holo) and the floating holo widgets (.holo). */
+body.holo-hidden .as-holo,
+body.holo-hidden .holo { display: none !important; }
+/* A video in window mode is the cockpit's glass, not a holo widget — keep it on
+   when the HOLO toggle hides the holograms. */
+body.holo-hidden .holo--window:not([hidden]) { display: block !important; }
+
+/* Passive mode */
+body.ghost .canopy, body.ghost .hud, body.ghost .dash, body.ghost #stars { opacity: .4; }
+
+/* ============ SCROLLING ============
+   Every panel scrolls its body when the content is taller than the panel
+   (resized small or content-heavy), instead of clipping it. */
+.holo-body { overflow-y: auto; }
+
+/* Thin, themed scrollbars on every scrollable panel region. */
+.settings-body, .mfd, .hub-body, .holo-body, .holo-folder-list,
+.holo-todo-list, .holo-dd-menu {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120,230,255,0.35) transparent;
+}
+.settings-body::-webkit-scrollbar, .mfd::-webkit-scrollbar,
+.hub-body::-webkit-scrollbar, .holo-body::-webkit-scrollbar,
+.holo-folder-list::-webkit-scrollbar, .holo-todo-list::-webkit-scrollbar,
+.holo-dd-menu::-webkit-scrollbar { width: 8px; height: 8px; }
+.settings-body::-webkit-scrollbar-track, .mfd::-webkit-scrollbar-track,
+.hub-body::-webkit-scrollbar-track, .holo-body::-webkit-scrollbar-track,
+.holo-folder-list::-webkit-scrollbar-track, .holo-todo-list::-webkit-scrollbar-track,
+.holo-dd-menu::-webkit-scrollbar-track { background: transparent; }
+.settings-body::-webkit-scrollbar-thumb, .mfd::-webkit-scrollbar-thumb,
+.hub-body::-webkit-scrollbar-thumb, .holo-body::-webkit-scrollbar-thumb,
+.holo-folder-list::-webkit-scrollbar-thumb, .holo-todo-list::-webkit-scrollbar-thumb,
+.holo-dd-menu::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(120,230,255,0.5), rgba(120,230,255,0.2));
+  border-radius: 4px; border: 1px solid rgba(120,230,255,0.15); }
+.settings-body::-webkit-scrollbar-thumb:hover, .mfd::-webkit-scrollbar-thumb:hover,
+.hub-body::-webkit-scrollbar-thumb:hover, .holo-body::-webkit-scrollbar-thumb:hover,
+.holo-folder-list::-webkit-scrollbar-thumb:hover, .holo-todo-list::-webkit-scrollbar-thumb:hover,
+.holo-dd-menu::-webkit-scrollbar-thumb:hover { background: rgba(120,230,255,0.6); }

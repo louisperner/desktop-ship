@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Build / packaging output
+build/
+dist/
+out/
+*.dmg
+
+# MCP control handshake (written at runtime to ~/.desktopship, ignore local copies)
+control.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor cruft
+.DS_Store
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
