@@ -32,6 +32,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Upload DMGs to the release
-        run: gh release upload "$GITHUB_REF_NAME" dist/*.dmg --clobber --repo "$GITHUB_REPOSITORY" || gh release create "$GITHUB_REF_NAME" dist/*.dmg --repo "$GITHUB_REPOSITORY" --generate-notes
+        # No --clobber: locally built (signed + notarized) assets win over CI builds.
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.dmg --repo "$GITHUB_REPOSITORY" || gh release create "$GITHUB_REF_NAME" dist/*.dmg --repo "$GITHUB_REPOSITORY" --generate-notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
