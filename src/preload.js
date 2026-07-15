@@ -27,6 +27,9 @@ contextBridge.exposeInMainWorld('cockpit', {
   },
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
+  // Per-launch secret for building /__local/ file URLs (see server.js).
+  localToken: ipcRenderer.sendSync('get-local-token'),
+
   // ---- Control channel (external MCP-driven commands) ----
   control: {
     onInvoke: (cb) => ipcRenderer.on('control:invoke', (_e, msg) => cb(msg)),

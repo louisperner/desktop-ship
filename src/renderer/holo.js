@@ -26,7 +26,8 @@
       // Route absolute local paths through the renderer server's /__local/ handler.
       const b64 = btoa(unescape(encodeURIComponent(s)))
         .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-      return location.origin + '/__local/' + b64;
+      const tok = (window.cockpit && window.cockpit.localToken) || '';
+      return location.origin + '/__local/' + b64 + '?t=' + encodeURIComponent(tok);
     }
     return s;
   }

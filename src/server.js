@@ -13,6 +13,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -61,20 +62,39 @@ function serveFile(filePath, req, res) {
 // an ephemeral port would give a fresh, empty store on every launch. If the fixed
 // port is taken we fall back to an ephemeral one (persistence degrades, but the
 // app still runs).
+// Constant-time string compare that never throws on length mismatch.
+function safeEqual(a, b) {
+  const ab = Buffer.from(String(a || ''));
+  const bb = Buffer.from(String(b || ''));
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
+}
+
 function startRendererServer(rendererDir, port = 0) {
+  // Per-launch secret required to read local files through /__local/. Without it
+  // any other process on the machine could read arbitrary files off the fixed
+  // loopback port; the renderer receives this token over IPC and appends it.
+  const localToken = crypto.randomBytes(24).toString('hex');
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
-      let urlPath;
-      try { urlPath = decodeURIComponent(new URL(req.url, 'http://127.0.0.1').pathname); }
+      let url, urlPath;
+      try {
+        url = new URL(req.url, 'http://127.0.0.1');
+        urlPath = decodeURIComponent(url.pathname);
+      }
       catch (_e) { res.writeHead(400); res.end('bad request'); return; }
 
-      // Local file passthrough: /__local/<base64url of absolute path>
+      // Local file passthrough: /__local/<base64url of absolute path>?t=<token>
       if (urlPath.startsWith('/__local/')) {
+        if (!safeEqual(url.searchParams.get('t'), localToken)) {
+          res.writeHead(403); res.end('forbidden'); return;
+        }
         const b64 = urlPath.slice('/__local/'.length);
         let abs;
         try { abs = Buffer.from(b64, 'base64url').toString('utf8'); }
         catch (_e) { res.writeHead(400); res.end('bad path'); return; }
         if (!path.isAbsolute(abs)) { res.writeHead(400); res.end('not absolute'); return; }
+        res.setHeader('X-Content-Type-Options', 'nosniff');
         serveFile(abs, req, res);
         return;
       }
@@ -95,7 +115,7 @@ function startRendererServer(rendererDir, port = 0) {
     };
     function onListen() {
       const actual = server.address().port;
-      resolve({ server, baseUrl: `http://127.0.0.1:${actual}` });
+      resolve({ server, baseUrl: `http://127.0.0.1:${actual}`, localToken });
     }
     server.on('error', onErr);
     server.listen(port, '127.0.0.1', onListen);

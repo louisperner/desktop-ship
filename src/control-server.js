@@ -36,7 +36,10 @@ function startControlServer(invokeRenderer) {
   const wss = new WebSocketServer({ host: '127.0.0.1', port: PREFERRED_PORT }, () => {
     const { port } = wss.address();
     const file = handshakePath();
-    fs.writeFileSync(file, JSON.stringify({ port, token, pid: process.pid }, null, 2));
+    // 0600: the token grants full control of the cockpit, so keep it readable
+    // only by the current user.
+    fs.writeFileSync(file, JSON.stringify({ port, token, pid: process.pid }, null, 2), { mode: 0o600 });
+    try { fs.chmodSync(file, 0o600); } catch (_e) {}
     console.log(`[control] listening on ws://127.0.0.1:${port} (handshake: ${file})`);
   });
 
@@ -44,8 +47,11 @@ function startControlServer(invokeRenderer) {
 
   wss.on('connection', (ws, req) => {
     // Token check (query string) — reject unauthenticated clients outright.
+    // Constant-time compare so the token can't be recovered by timing.
     const url = new URL(req.url, 'http://127.0.0.1');
-    if (url.searchParams.get('token') !== token) {
+    const given = Buffer.from(String(url.searchParams.get('token') || ''));
+    const expected = Buffer.from(token);
+    if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) {
       ws.close(4001, 'unauthorized');
       return;
     }

@@ -10,6 +10,7 @@ let win;
 let tray = null;    // menu bar / system tray handle (keep a ref so it isn't GC'd)
 let control = null; // control server handle (close on quit)
 let rendererBaseUrl = null; // http://127.0.0.1:PORT — set before the window loads
+let localFileToken = null; // secret required to read local files via /__local/
 
 // ---- renderer round-trip for the control server ----
 // Each external command is forwarded to the renderer and matched back by id.
@@ -81,10 +82,18 @@ function createWindow() {
     },
   });
 
-  // Grant media (camera/mic) requests so camera-stream widgets can use
-  // getUserMedia from this file:// window.
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {
-    cb(permission === 'media' || permission === 'mediaKeySystem');
+  // Grant media (camera/mic) requests ONLY to the cockpit's own top frame, so
+  // camera-stream widgets can use getUserMedia. Arbitrary sites navigated inside
+  // the <webview> browser widget get their own webContents and are denied, so
+  // they can never silently grab the camera/mic.
+  session.defaultSession.setPermissionRequestHandler((wc, permission, cb) => {
+    const isCockpit = win && !win.isDestroyed() && wc === win.webContents;
+    cb(isCockpit && (permission === 'media' || permission === 'mediaKeySystem'));
+  });
+  // Also deny non-cockpit frames for synchronous permission checks.
+  session.defaultSession.setPermissionCheckHandler((wc, permission) => {
+    const isCockpit = win && !win.isDestroyed() && wc === win.webContents;
+    return isCockpit && (permission === 'media' || permission === 'mediaKeySystem');
   });
 
   // Show the cockpit on every workspace, including over fullscreen apps.
@@ -234,8 +243,28 @@ app.whenReady().then(async () => {
   // Serve from the project root: index.html references ../../node_modules assets,
   // so the http root must be high enough to reach them. A FIXED port keeps the
   // page origin stable across launches so localStorage persists.
-  const { baseUrl } = await startRendererServer(path.join(__dirname, '..'), 51789);
+  const { baseUrl, localToken } = await startRendererServer(path.join(__dirname, '..'), 51789);
   rendererBaseUrl = baseUrl;
+  localFileToken = localToken;
+
+  // Harden every <webview> guest: strip any preload, keep Node disabled, and
+  // block attempts to raise privileges. Without this an injected <webview> could
+  // request nodeIntegration or a preload and break out of the renderer sandbox.
+  app.on('web-contents-created', (_e, contents) => {
+    contents.on('will-attach-webview', (_evt, webPreferences, params) => {
+      delete webPreferences.preload;
+      webPreferences.nodeIntegration = false;
+      webPreferences.contextIsolation = true;
+      webPreferences.webSecurity = true;
+      delete params.nodeintegration;
+    });
+    // Guests may not spawn new BrowserWindows; open links externally instead.
+    contents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+      return { action: 'deny' };
+    });
+  });
+
   createWindow();
   createTray();
 
@@ -327,7 +356,17 @@ app.whenReady().then(async () => {
   // Open a path with the OS default handler (used by folder widget items).
   ipcMain.handle('fs-open-path', (_e, p) => shell.openPath(p));
   // Open a URL in the user's default browser (e.g. embed-blocked YouTube videos).
-  ipcMain.handle('open-external', (_e, url) => shell.openExternal(url));
+  // Only web/mail schemes are allowed — this refuses file://, and other schemes
+  // that could launch local handlers or execute code.
+  ipcMain.handle('open-external', (_e, url) => {
+    let scheme;
+    try { scheme = new URL(String(url)).protocol; } catch { return false; }
+    if (scheme !== 'http:' && scheme !== 'https:' && scheme !== 'mailto:') return false;
+    return shell.openExternal(String(url));
+  });
+
+  // Hand the renderer the per-launch token it needs to build /__local/ URLs.
+  ipcMain.on('get-local-token', (e) => { e.returnValue = localFileToken; });
 
   // ---- Terminal: real shell sessions via node-pty, one per tab (keyed by id) ----
   ipcMain.on('term-start', (_e, { id, cols, rows } = {}) => {
