@@ -870,7 +870,7 @@
   dock.className = 'holo-dock';
   dock.id = 'holoDock';
   dock.hidden = true;
-  dock.innerHTML = `<div class="holo-dock-bar drag">⊞ ADD WIDGET</div><div class="holo-dock-btns"></div>`;
+  dock.innerHTML = `<div class="holo-dock-bar drag">⊞ ADD WIDGET<button class="console-min holo-dock-close" title="Close">×</button></div><div class="holo-dock-btns"></div>`;
   body.appendChild(dock);
   const btnWrap = $$(dock, '.holo-dock-btns');
   CATALOG_ORDER.forEach((type) => {
@@ -892,6 +892,7 @@
     localStorage.setItem(DOCK_OPEN_KEY, on ? '1' : '0');
   }
   dockBtn.addEventListener('click', () => setDockOpen(dock.hidden));
+  $$(dock, '.holo-dock-close').addEventListener('click', () => setDockOpen(false));
   if (localStorage.getItem(DOCK_OPEN_KEY) === '1') setDockOpen(true);
 
   // ---- live updates (per instance) ------------------------------------------

@@ -583,7 +583,7 @@ body.cam-hd-max .canopy-tab { z-index: 8; }
   transition: transform .7s cubic-bezier(.55,.06,.2,1); }
 .holo-dock[hidden] { display: none; }
 body.raised .holo-dock { transform: translateY(var(--bg-lift, 0px)); }
-.holo-dock-bar { cursor: move; font-size: 10px; letter-spacing: 2px; padding: 8px 10px; color: var(--hud);
+.holo-dock-bar { display: flex; align-items: center; cursor: move; font-size: 10px; letter-spacing: 2px; padding: 8px 10px; color: var(--hud);
   border-bottom: 1px solid var(--line); background: linear-gradient(180deg, rgba(174,233,255,0.06), transparent); }
 .holo-dock-btns { display: flex; flex-direction: column; gap: 6px; padding: 8px; }
 .holo-btn { background: rgba(0,0,0,0.35); color: var(--hud); border: 1px solid var(--line);
