@@ -1,6 +1,6 @@
 {
   "name": "desktop-ship",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Transparent desktop cockpit overlay built with Electron",
   "main": "src/main.js",
   "scripts": {
