@@ -896,6 +896,7 @@
 
   // ---- live updates (per instance) ------------------------------------------
   setInterval(() => {
+    if (document.hidden) return;
     const now = new Date();
     const time = now.toLocaleTimeString('en-GB');
     const date = now.toDateString().toUpperCase();
@@ -908,6 +909,7 @@
   }, 1000);
 
   setInterval(() => {
+    if (document.hidden) return;
     instances.forEach((w) => {
       if (w.type !== 'sys' || !isOpen(w.id)) return;
       const el = els[w.id];

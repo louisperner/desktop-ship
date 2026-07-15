@@ -79,6 +79,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true, // enables the <webview> tag used by the BROWSER widget
+      backgroundThrottling: true, // throttle rAF/timers while the window is hidden
     },
   });
 

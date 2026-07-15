@@ -382,6 +382,7 @@ const $ = (id) => document.getElementById(id);
   window.addEventListener('pointermove', (e) => {
     pTargetX = (e.clientX / Math.max(1, G.w) - 0.5);
     pTargetY = (e.clientY / Math.max(1, G.h) - 0.5);
+    noteInput();
   });
 
   let cx0 = 0, cy0 = 0;
@@ -417,24 +418,53 @@ const $ = (id) => document.getElementById(id);
     if (reseedDensity) STYLES[current].reset();
     // Hue/color is baked into nebula/galaxy/aurora/grid3d/pulsar at reset().
     if (patch.color && ['nebula', 'galaxy', 'aurora', 'grid3d', 'pulsar'].includes(current)) STYLES[current].reset();
+    // Toggling the starfield off parks the render loop; clear the last frame.
+    if (patch.show != null) {
+      if (patch.show) wake();
+      else ctx.clearRect(0, 0, G.w, G.h);
+    }
     return { ...O };
   };
 
-  function frame() {
+  // The ship never stops flying: while the starfield is on and the window is
+  // visible, the loop always runs. It parks only when the starfield is turned
+  // off or the window is hidden, and drops to 30fps after 30s without input
+  // (ambient viewing; motion continues, just cheaper).
+  const IDLE_MS = 30000, IDLE_FRAME_MS = 1000 / 30;
+  let rafId = null, lastDraw = 0, lastInput = performance.now();
+  function noteInput() {
+    lastInput = performance.now();
+    wake();
+  }
+  window.addEventListener('mousedown', noteInput);
+  window.addEventListener('wheel', noteInput, { passive: true });
+  window.addEventListener('keydown', noteInput);
+
+  function frame(t) {
+    if (!O.show || document.hidden) { rafId = null; return; }   // park; wake() restarts
+    if (t - lastInput > IDLE_MS && t - lastDraw < IDLE_FRAME_MS - 1) {
+      rafId = requestAnimationFrame(frame);
+      return;
+    }
+    lastDraw = t;
     // Ease the parallax offset; apply it to the vanishing point each frame.
     pX += (pTargetX - pX) * 0.06; pY += (pTargetY - pY) * 0.06;
     if (O.parallax) { G.cx = cx0 + pX * 40; G.cy = cy0 + pY * 30; }
     else { G.cx = cx0; G.cy = cy0; }
     const speed = (O.reactive ? warp : 1.4) * O.speedMul;
-    if (O.show) STYLES[current].draw(ctx, G, speed);
-    else ctx.clearRect(0, 0, G.w, G.h);
-    requestAnimationFrame(frame);
+    STYLES[current].draw(ctx, G, speed);
+    rafId = requestAnimationFrame(frame);
   }
-  frame();
+  function wake() {
+    if (rafId == null && O.show && !document.hidden) rafId = requestAnimationFrame(frame);
+  }
+  document.addEventListener('visibilitychange', wake);
+  wake();
 })();
 
 // ----- Clock + coords -----
 function tick() {
+  if (document.hidden) return;
   const now = new Date();
   $('clock').textContent = now.toLocaleTimeString('en-GB');
 }
@@ -454,6 +484,7 @@ let cpu = 24, mem = 47, net = 12, thr = 68, speed = 88, hull = 100;
 let coordX = 1284, coordY = -730, coordZ = 9921;
 
 setInterval(() => {
+  if (document.hidden) return;
   cpu = jitter(cpu, 14); mem = jitter(mem, 6); net = jitter(net, 20);
   setGauge('g-cpu', cpu); setGauge('g-mem', mem); setGauge('g-net', net);
 
