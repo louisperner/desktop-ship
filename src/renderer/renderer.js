@@ -25,6 +25,7 @@ const $ = (id) => document.getElementById(id);
     vpY: 0.46,                                         // vanishing point Y (fraction of height)
     parallax: false, reactive: true,
     show: true,                                       // master on/off for the starfield
+    ecoIdle: true,                                    // drop to 30fps after 30s without input
   };
 
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -442,7 +443,7 @@ const $ = (id) => document.getElementById(id);
 
   function frame(t) {
     if (!O.show || document.hidden) { rafId = null; return; }   // park; wake() restarts
-    if (t - lastInput > IDLE_MS && t - lastDraw < IDLE_FRAME_MS - 1) {
+    if (O.ecoIdle && t - lastInput > IDLE_MS && t - lastDraw < IDLE_FRAME_MS - 1) {
       rafId = requestAnimationFrame(frame);
       return;
     }
@@ -712,7 +713,7 @@ refreshDisplays();
     bgZoom: 100, bgY: 0, cockpitShow: true,
     bgFill: false, bgColor: '#040a0e', bgAlpha: 100,
     snap: true, gridSize: 16, gridShow: false,
-    appOpacity: 100,
+    appOpacity: 100, ecoIdle: true,
   }, STAR_DEFAULTS, (() => { try { return JSON.parse(localStorage.getItem(SKEY)) || {}; } catch { return {}; } })());
 
   const persist = () => localStorage.setItem(SKEY, JSON.stringify(S));
@@ -746,6 +747,7 @@ refreshDisplays();
       colorful: S.starColorful, trails: S.starTrails,
       parallax: S.starParallax, reactive: S.starReactive,
       show: S.starShow,
+      ecoIdle: S.ecoIdle,
     });
     const sw = (id, on) => { $(id).textContent = on ? 'ON' : 'OFF'; $(id).classList.toggle('off', !on); };
     sw('starShowToggle', S.starShow);
@@ -754,6 +756,7 @@ refreshDisplays();
     sw('starTrailsToggle', S.starTrails);
     sw('starParallaxToggle', S.starParallax);
     sw('starReactiveToggle', S.starReactive);
+    sw('ecoIdleToggle', S.ecoIdle);
   }
   function applyGrid() {
     window.CockpitPanels.setSnap(S.snap);
@@ -806,6 +809,7 @@ refreshDisplays();
     S.appOpacity = +e.target.value; $('appOpacityVal').textContent = S.appOpacity + '%'; applyWindow(); persist();
   });
   $('resetLayout').addEventListener('click', () => window.CockpitPanels.reset());
+  $('ecoIdleToggle').addEventListener('click', () => { S.ecoIdle = !S.ecoIdle; applyStars(); persist(); });
 
   // --- universe controls ---
   // Any manual tweak drops the preset selector back to "Custom".
